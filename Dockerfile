@@ -11,26 +11,26 @@ RUN apt-get update && apt-get install -y \
     git \
     curl
 
-# Instalar extensiones de PHP incluyendo ZIP
+# Instalar extensiones de PHP incluyendo ZIP y MySQL
 RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip
 
-# Configurar Apache
+# Configurar Apache para que apunte a la carpeta /public de Laravel
 ENV APACHE_DOCUMENT_ROOT /var/www/html/public
 RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf
 RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
 RUN a2enmod rewrite
 
-# Copiar el proyecto
+# Copiar todo el contenido del proyecto al contenedor
 COPY . /var/www/html
 
 # Instalar Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Ejecutar instalación ignorando extensiones faltantes para evitar el Error 2
+# Instalar dependencias de PHP ignorando requisitos de plataforma para evitar errores en Render
 RUN composer install --no-dev --optimize-autoloader --ignore-platform-reqs
 
-# Permisos para Laravel
+# Dar permisos correctos a las carpetas de almacenamiento y caché de Laravel
 RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 
-# Comando de arranque (Migraciones + Servidor)
-CMD php artisan migrate:fresh --force && apache2-foreground
+# Comando de arranque: Solo inicia Apache para no borrar la base de datos de Railway
+CMD ["apache2-foreground"]
