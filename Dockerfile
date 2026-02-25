@@ -26,4 +26,7 @@ RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cac
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 RUN composer install --no-dev --optimize-autoloader
 
-CMD ["apache2-foreground"]
+# ... (todo lo demás igual que antes)
+
+# Cambia la última línea por esta:
+CMD php artisan migrate:fresh --seed --force && apache2-foreground
