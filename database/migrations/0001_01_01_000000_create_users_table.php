@@ -6,19 +6,18 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
-        Schema::create('users', function (Blueprint $table) {
-            $table->id();
-            $table->string('name');
-            $table->string('email')->unique();
-            $table->timestamp('email_verified_at')->nullable();
+        // Cambiamos 'users' por 'usuario'
+        Schema::create('usuario', function (Blueprint $table) {
+            $table->id(); 
+            $table->string('usuario')->unique(); // Para tu cédula 19217182
             $table->string('password');
+            $table->integer('id_empleado')->nullable();
+            $table->integer('id_rol')->nullable();
+            $table->boolean('activo')->default(true);
             $table->rememberToken();
-            $table->timestamps();
+            // Quitamos timestamps() porque en tu modelo pusiste public $timestamps = false;
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {
@@ -37,12 +36,9 @@ return new class extends Migration
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
-        Schema::dropIfExists('users');
+        Schema::dropIfExists('usuario');
         Schema::dropIfExists('password_reset_tokens');
         Schema::dropIfExists('sessions');
     }
