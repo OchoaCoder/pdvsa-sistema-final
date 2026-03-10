@@ -3,12 +3,15 @@
 namespace App\Exports;
 
 use App\Models\Solicitud;
-use Maatwebsite\Excel\Concerns\FromQuery; // Cambiado para mayor eficiencia con filtros
+use Maatwebsite\Excel\Concerns\FromQuery;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
 use Maatwebsite\Excel\Concerns\WithStyles;
-use Maatwebsite\Excel\Concerns\ShouldAutoSize; // Nueva: Autoajusta el ancho de columnas
+use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Border;
+use Carbon\Carbon;
 
 class SolicitudesExport implements FromQuery, WithHeadings, WithMapping, WithStyles, ShouldAutoSize
 {
@@ -16,7 +19,7 @@ class SolicitudesExport implements FromQuery, WithHeadings, WithMapping, WithSty
     protected $fecha_fin;
 
     /**
-     * Constructor para recibir las fechas del filtro
+     * Constructor: Recibe las fechas desde el SolicitudController
      */
     public function __construct($inicio = null, $fin = null)
     {
@@ -25,48 +28,48 @@ class SolicitudesExport implements FromQuery, WithHeadings, WithMapping, WithSty
     }
 
     /**
-     * Consulta filtrada para el Excel
+     * Consulta Dinámica: Filtra el reporte según la selección de la Gerencia
      */
     public function query()
     {
-        $query = Solicitud::query()->with(['beneficio', 'estatus']);
+        // Cargamos las relaciones para evitar lentitud (Eager Loading)
+        $query = Solicitud::query()->with(['beneficio', 'estatus', 'usuario']);
 
-        // Si se pasaron fechas, filtramos. Si no, trae todo el mes actual.
-        if ($this->fecha_inicio && $this->fecha_fin) {
+        // Si la gerente seleccionó un rango de fechas, aplicamos el filtro
+        if (!empty($this->fecha_inicio) && !empty($this->fecha_fin)) {
             $query->whereBetween('fecha_solicitud', [$this->fecha_inicio, $this->fecha_fin]);
-        } else {
-            $query->whereMonth('fecha_solicitud', now()->month);
         }
 
-        return $query->orderBy('fecha_solicitud', 'asc');
+        // Ordenamos por fecha para que el reporte sea cronológico
+        return $query->orderBy('fecha_solicitud', 'desc');
     }
 
     /**
-     * Encabezados con formato profesional
+     * Encabezados del Reporte (Rojo PDVSA)
      */
     public function headings(): array
     {
         return [
-            'N° SOLICITUD',
-            'INDICADOR',
+            'ID',
+            'SOLICITANTE',
             'FECHA DE REGISTRO',
             'TIPO DE BENEFICIO',
-            'DESCRIPCIÓN DEL REQUERIMIENTO',
+            'DESCRIPCIÓN',
             'ESTATUS ACTUAL',
-            'MONTO (Bs.)'
+            'MONTO APROBADO (Bs.)'
         ];
     }
 
     /**
-     * Mapeo de datos para legibilidad técnica
+     * Mapeo de Columnas: Asegura que los datos salgan limpios
      */
     public function map($solicitud): array
     {
         return [
             $solicitud->id_solicitud,
-            $solicitud->id_usuario, // Añadido para que RRHH sepa de quién es
-            \Carbon\Carbon::parse($solicitud->fecha_solicitud)->format('d/m/Y'),
-            $solicitud->beneficio->nombre_beneficio ?? 'N/A', // Corregido según tu modelo
+            $solicitud->usuario->usuario ?? 'N/A', // Muestra el nombre/indicador del usuario
+            Carbon::parse($solicitud->fecha_solicitud)->format('d/m/Y'),
+            $solicitud->beneficio->descripcion ?? 'N/A',
             $solicitud->descripcion,
             $solicitud->estatus->descripcion ?? 'Pendiente',
             number_format($solicitud->monto, 2, ',', '.')
@@ -74,31 +77,38 @@ class SolicitudesExport implements FromQuery, WithHeadings, WithMapping, WithSty
     }
 
     /**
-     * Estilos corporativos (Rojo PDVSA y texto blanco)
+     * Estilos Profesionales PDVSA
      */
     public function styles(Worksheet $sheet)
     {
         return [
-            // Estilo para la fila 1 (Cabeceras)
+            // Estilo de la cabecera (Fila 1)
             1 => [
                 'font' => [
                     'bold' => true, 
-                    'color' => ['rgb' => 'FFFFFF']
+                    'color' => ['rgb' => 'FFFFFF'],
+                    'size' => 12
                 ], 
                 'fill' => [
                     'fillType' => 'solid', 
                     'startColor' => ['rgb' => 'ED1C24'] // Rojo Corporativo
                 ],
                 'alignment' => [
-                    'horizontal' => \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER
+                    'horizontal' => Alignment::HORIZONTAL_CENTER,
+                    'vertical' => Alignment::VERTICAL_CENTER,
                 ]
             ],
-            // Bordes para toda la tabla (opcional)
-            'A1:G100' => [
+            // Alineación centrada para las columnas de ID, Fecha y Estatus
+            'A' => ['alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER]],
+            'C' => ['alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER]],
+            'F' => ['alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER]],
+            
+            // Bordes finos para que se vea como una tabla oficial
+            'A1:G500' => [
                 'borders' => [
                     'allBorders' => [
-                        'borderStyle' => \PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN,
-                        'color' => ['rgb' => 'CCCCCC'],
+                        'borderStyle' => Border::BORDER_THIN,
+                        'color' => ['rgb' => '000000'],
                     ],
                 ],
             ],

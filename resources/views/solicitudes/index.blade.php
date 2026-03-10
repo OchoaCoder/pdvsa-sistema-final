@@ -3,7 +3,7 @@
 @section('content')
 <div class="container-fluid">
     {{-- 1. SECCIÓN DE ESTADÍSTICAS --}}
-    @if(Auth::user()->nivel_acceso == 3)
+    @if(Auth::user()->nivel_acceso >= 2)
     <div class="row mb-4">
         <div class="col-md-3">
             <div class="card bg-white border-0 shadow-sm p-3">
@@ -37,17 +37,17 @@
             <form action="{{ route('solicitudes.index') }}" method="GET" class="row g-3 align-items-end">
                 <div class="col-md-4">
                     <label class="form-label small fw-bold text-secondary">Desde:</label>
-                    <input type="date" name="fecha_inicio" class="form-control" value="{{ request('fecha_inicio') }}">
+                    <input type="date" id="fecha_inicio" name="fecha_inicio" class="form-control" value="{{ request('fecha_inicio') }}">
                 </div>
                 <div class="col-md-4">
                     <label class="form-label small fw-bold text-secondary">Hasta:</label>
-                    <input type="date" name="fecha_fin" class="form-control" value="{{ request('fecha_fin') }}">
+                    <input type="date" id="fecha_fin" name="fecha_fin" class="form-control" value="{{ request('fecha_fin') }}">
                 </div>
                 <div class="col-md-4 d-flex gap-2">
-                    <button type="submit" class="btn btn-pdvsa w-100 fw-bold">
+                    <button type="submit" class="btn btn-pdvsa w-100 fw-bold shadow-sm">
                         <i class="fas fa-filter"></i> Filtrar
                     </button>
-                    <a href="{{ route('solicitudes.index') }}" class="btn btn-outline-secondary w-50">
+                    <a href="{{ route('solicitudes.index') }}" class="btn btn-outline-secondary w-50 shadow-sm">
                         <i class="fas fa-undo"></i>
                     </a>
                 </div>
@@ -72,16 +72,18 @@
             <div class="card border-0 shadow-sm h-100">
                 <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center border-0">
                     <h5 class="mb-0 fw-bold">
-                        {{ Auth::user()->nivel_acceso == 3 ? 'Gestión de Auditoría' : 'Mis Solicitudes' }}
+                        {{ Auth::user()->nivel_acceso >= 2 ? 'Gestión de Auditoría' : 'Mis Solicitudes' }}
                     </h5>
                     <div class="d-flex gap-2">
                         <a href="{{ route('solicitudes.create') }}" class="btn btn-pdvsa btn-sm px-3 shadow-sm">
                             <i class="fas fa-plus"></i> Nueva
                         </a>
-                        @if(Auth::user()->nivel_acceso == 3)
-                        <a href="{{ route('solicitudes.excel', request()->all()) }}" class="btn btn-success btn-sm px-3 shadow-sm">
+                        
+                        {{-- EXCEL DINÁMICO: Solo Nivel 2 y 3 (Gerencia/Auditoría) --}}
+                        @if(Auth::user()->nivel_acceso >= 2)
+                        <button type="button" onclick="descargarExcelFiltrado()" class="btn btn-success btn-sm px-3 shadow-sm">
                             <i class="fas fa-file-excel"></i> Excel
-                        </a>
+                        </button>
                         @endif
                     </div>
                 </div>
@@ -101,9 +103,9 @@
                             <tr>
                                 <td class="ps-3 fw-bold text-primary">#{{ $sol->id_solicitud }}</td>
                                 <td>
-                                    <div class="fw-bold">{{ $sol->beneficio->nombre_beneficio ?? 'N/A' }}</div>
+                                    <div class="fw-bold">{{ $sol->beneficio->descripcion ?? 'N/A' }}</div>
                                     <small class="text-muted">{{ date('d/m/Y', strtotime($sol->fecha_solicitud)) }}</small>
-                                    @if(Auth::user()->nivel_acceso == 3)
+                                    @if(Auth::user()->nivel_acceso >= 2)
                                         <div class="small text-danger">Solicitante: {{ $sol->usuario->usuario ?? 'N/A' }}</div>
                                     @endif
                                 </td>
@@ -117,11 +119,10 @@
                                 </td>
                                 <td class="text-center">
                                     <div class="btn-group shadow-sm">
-                                        <a href="{{ route('solicitudes.pdf', $sol->id_solicitud) }}" class="btn btn-sm btn-outline-secondary" title="Ver PDF">
+                                        <a href="{{ route('solicitudes.pdf', $sol->id_solicitud) }}" class="btn btn-sm btn-outline-secondary" title="Ver PDF" target="_blank">
                                             <i class="fas fa-file-pdf"></i>
                                         </a>
                                         
-                                        {{-- BOTONES DE DECISIÓN: Solo si es Admin y está Pendiente --}}
                                         @if(Auth::user()->nivel_acceso == 3 && $sol->id_estatusSol == 1)
                                             <button type="button" class="btn btn-sm btn-outline-success" 
                                                     onclick="openApproveModal({{ $sol->id_solicitud }})" title="Aprobar">
@@ -179,14 +180,29 @@
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
+    // Función para manejar el Modal
     function openApproveModal(id) {
         const form = document.getElementById('approveForm');
-        // Asegúrate de que esta ruta coincida con la de web.php
         form.action = `/solicitudes/actualizar-estatus/${id}`;
         document.getElementById('modalIdSol').innerText = '#' + id;
         new bootstrap.Modal(document.getElementById('approveModal')).show();
     }
 
+    // FUNCIÓN PARA DESCARGAR EXCEL CON FILTROS
+    function descargarExcelFiltrado() {
+        // Obtenemos los valores de fecha actuales de los inputs
+        const inicio = document.getElementById('fecha_inicio').value;
+        const fin = document.getElementById('fecha_fin').value;
+        
+        // Construimos la URL con parámetros
+        let url = "{{ route('solicitudes.exportarExcel') }}";
+        url += `?fecha_inicio=${inicio}&fecha_fin=${fin}`;
+        
+        // Iniciamos la descarga
+        window.location.href = url;
+    }
+
+    // Gráfico de Estadísticas
     @if(Auth::user()->nivel_acceso >= 2)
     document.addEventListener('DOMContentLoaded', function() {
         const ctx = document.getElementById('solicitudesChart').getContext('2d');

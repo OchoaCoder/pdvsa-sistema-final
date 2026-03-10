@@ -10,6 +10,14 @@ class Empleado extends Model
     
     // Tu tabla usa 'codigo' como llave primaria en lugar de 'id'
     protected $primaryKey = 'codigo';
+
+    /**
+     * IMPORTANTE: Agregamos estas dos líneas para que Laravel 
+     * no intente autoincrementar el código y sepa que es un texto.
+     * Esto no daña tu app, solo la hace compatible con los tests.
+     */
+    public $incrementing = false;
+    protected $keyType = 'string';
     
     public $timestamps = false;
 

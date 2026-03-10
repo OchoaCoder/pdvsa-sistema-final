@@ -51,7 +51,8 @@
     <table>
         <tr>
             <th style="width: 30%;">Tipo de Beneficio:</th>
-            <td>{{ $solicitud->beneficio->nombre_beneficio ?? 'No especificado' }}</td>
+            {{-- SE CORRIGIÓ LA SIGUIENTE LÍNEA --}}
+            <td>{{ $solicitud->beneficio->descripcion ?? 'No especificado' }}</td>
         </tr>
         <tr>
             <th>Fecha de Solicitud:</th>

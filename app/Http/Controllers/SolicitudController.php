@@ -23,15 +23,14 @@ class SolicitudController extends Controller
     public function index(Request $request)
     {
         $usuario = Auth::user();
-        $query = Solicitud::with(['beneficio', 'estatus', 'usuario']); // Añadimos usuario para saber quién solicita
+        $query = Solicitud::with(['beneficio', 'estatus', 'usuario']); 
         
-        // 1. Filtro de Privacidad: Nivel 1 y 2 solo ven lo suyo (o de su dpto si quisieras)
-        // Nivel 3 (Admin) ve todo.
-        if ($usuario->nivel_acceso < 3) {
+        // 1. Filtro de Privacidad
+        if ($usuario->nivel_acceso == 1) {
             $query->where('id_usuario', $usuario->id);
         }
 
-        // 2. Filtro de Rango de Fechas
+        // 2. Filtro de Rango de Fechas (Para la tabla y el gráfico)
         if ($request->filled('fecha_inicio') && $request->filled('fecha_fin')) {
             $query->whereBetween('fecha_solicitud', [$request->fecha_inicio, $request->fecha_fin]);
         }
@@ -50,17 +49,86 @@ class SolicitudController extends Controller
     }
 
     /**
-     * NUEVA FUNCIÓN: Aprobar o Rechazar Solicitud (Solo Nivel 3)
+     * EXCEL DINÁMICO (Paso 2): Recibe filtros de la vista
+     */
+    public function exportarExcel(Request $request)
+    {
+        // Seguridad: Nivel 2 y 3 pueden exportar
+        if (Auth::user()->nivel_acceso < 2) {
+            abort(403, 'No tienes permisos para descargar reportes.');
+        }
+
+        // Capturamos las fechas enviadas por el botón de la vista
+        $fecha_inicio = $request->query('fecha_inicio');
+        $fecha_fin = $request->query('fecha_fin');
+
+        return Excel::download(
+            new SolicitudesExport($fecha_inicio, $fecha_fin), 
+            'Reporte_PDVSA_'.now()->format('d_m_Y').'.xlsx'
+        );
+    }
+
+    /**
+     * Guardar nueva solicitud con doble validación (Antiduplicados)
+     */
+    public function store(Request $request)
+    {
+        $request->validate([
+            'id_cdt' => 'required',
+            'id_beneficio' => 'required',
+            'descripcion' => 'required|min:10',
+        ]);
+
+        $usuario = Auth::user();
+
+        // VALIDACIÓN A: No permitir si ya hay una PENDIENTE del mismo beneficio
+        $existePendiente = Solicitud::where('id_usuario', $usuario->id)
+                                    ->where('id_beneficio', $request->id_beneficio)
+                                    ->where('id_estatusSol', 1)
+                                    ->exists();
+
+        if ($existePendiente) {
+            return back()->with('error', 'Ya tienes una solicitud pendiente para este beneficio.');
+        }
+
+        // VALIDACIÓN B: No permitir repetir el mismo beneficio el mismo DÍA
+        $existeHoy = Solicitud::where('id_usuario', $usuario->id)
+                                ->where('id_beneficio', $request->id_beneficio)
+                                ->whereDate('fecha_solicitud', now()->toDateString())
+                                ->exists();
+
+        if ($existeHoy) {
+            return back()->with('error', 'Límite alcanzado: Solo puedes enviar una solicitud de este tipo por día.');
+        }
+
+        $empleado = Empleado::where('codigo', $usuario->id_empleado)->first();
+
+        Solicitud::create([
+            'id_usuario'      => $usuario->id,
+            'id_cdt'          => $request->id_cdt,
+            'id_dept'         => $empleado->id_dept ?? 1,
+            'id_cargo'        => $empleado->id_cargo ?? 1,
+            'id_beneficio'    => $request->id_beneficio,
+            'id_estatusSol'   => 1, 
+            'descripcion'     => $request->descripcion,
+            'monto'           => 0, 
+            'fecha_solicitud' => now(),
+        ]);
+
+        return redirect()->route('solicitudes.index')->with('success', '¡Solicitud enviada a revisión!');
+    }
+
+    /**
+     * Aprobar o Rechazar (Solo Nivel 3)
      */
     public function actualizarEstatus(Request $request, $id)
     {
-        // Solo administradores nivel 3 pueden auditar
         if (Auth::user()->nivel_acceso < 3) {
             return back()->with('error', 'No tienes autorización para realizar esta acción.');
         }
 
         $request->validate([
-            'id_estatusSol' => 'required|in:2,3', // 2: Aprobado, 3: Rechazado
+            'id_estatusSol' => 'required|in:2,3', 
             'monto' => 'nullable|numeric|min:0',
         ]);
 
@@ -69,27 +137,11 @@ class SolicitudController extends Controller
         $solicitud->update([
             'id_estatusSol' => $request->id_estatusSol,
             'monto' => $request->monto ?? $solicitud->monto,
-            // Aquí podrías guardar quién aprobó si añades la columna 'auditado_por'
         ]);
 
         $statusName = $request->id_estatusSol == 2 ? 'APROBADA' : 'RECHAZADA';
         
         return back()->with('success', "Solicitud #{$id} marcada como {$statusName}.");
-    }
-
-    public function exportarExcel(Request $request)
-    {
-        if (Auth::user()->nivel_acceso < 2) {
-            abort(403, 'No tienes permisos para descargar reportes.');
-        }
-
-        $fecha_inicio = $request->query('fecha_inicio');
-        $fecha_fin = $request->query('fecha_fin');
-
-        return Excel::download(
-            new SolicitudesExport($fecha_inicio, $fecha_fin), 
-            'Reporte_PDVSA_'.now()->format('d_m_Y').'.xlsx'
-        );
     }
 
     public function create()
@@ -103,39 +155,13 @@ class SolicitudController extends Controller
         return view('solicitudes.create', compact('centros', 'beneficios', 'empleado'));
     }
 
-    public function store(Request $request)
-    {
-        $request->validate([
-            'id_cdt' => 'required',
-            'id_beneficio' => 'required',
-            'descripcion' => 'required|min:10',
-        ]);
-
-        $usuario = Auth::user();
-        $empleado = Empleado::where('codigo', $usuario->id_empleado)->first();
-
-        Solicitud::create([
-            'id_usuario'      => $usuario->id,
-            'id_cdt'          => $request->id_cdt,
-            'id_dept'         => $empleado->id_dept ?? 1,
-            'id_cargo'        => $empleado->id_cargo ?? 1,
-            'id_beneficio'    => $request->id_beneficio,
-            'id_estatusSol'   => 1, // Por defecto Pendiente
-            'descripcion'     => $request->descripcion,
-            'monto'           => 0, 
-            'fecha_solicitud' => now(),
-        ]);
-
-        return redirect()->route('solicitudes.index')->with('success', '¡Solicitud enviada a revisión!');
-    }
-
     public function descargarPDF($id)
     {
         $solicitud = Solicitud::with(['beneficio', 'estatus'])
                               ->where('id_solicitud', $id)
                               ->firstOrFail();
 
-        if (Auth::user()->nivel_acceso < 3 && $solicitud->id_usuario != Auth::id()) {
+        if (Auth::user()->nivel_acceso == 1 && $solicitud->id_usuario != Auth::id()) {
             abort(403);
         }
 
